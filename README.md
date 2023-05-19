@@ -21,3 +21,7 @@ python3 main.py find
 
 ## How does it work?
 This search engine uses cosine similarity to find the best possible video for the given query.
+
+For transcribing the video, OpenAI's Whisper model is used. For question answering, Facebook's RoBERTa is used. 
+
+![Demo](docs/TutorialTube.png)
