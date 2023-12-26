@@ -1,24 +1,31 @@
-import os
-
+from flask import Flask, request, jsonify
+from flask_cors import CORS, cross_origin
+import os   
 import requests
 import json
 import urllib
-
 import torch
 import torch.nn as nn
 from sentence_transformers import SentenceTransformer
-
 import whisper
 import pytube
-
 from transformers import pipeline
 
-import argparse
+app = Flask(__name__)
 
-parser = argparse.ArgumentParser(prog='TutorialTube', description='Search engine for videos')
+app.config['CORS_ORIGINS'] = '*'
+app.config['CORS_SEND_WILDCARD'] = False
+app.config['SECRET_KEY'] = 'the quick brown fox jumps over the lazy   dog'
 
-def add_video():
-    input_url = input("Enter url: ")
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+SITE_ROOT = os.path.realpath(os.path.dirname(__file__))
+
+@app.route('/add_video', methods=['POST'])
+def add_video_route():
+    data = request.get_json()
+    input_url = data.get("url")
+
     params = {"format": "json", "url": input_url}
     url = "https://www.youtube.com/oembed"
     query_string = urllib.parse.urlencode(params)
@@ -48,22 +55,26 @@ def add_video():
         s["text"] = seg["text"]
         final_segments.append(s)
 
-
-    with open('videos.json', 'r') as f:
+    with open(os.path.join(SITE_ROOT, 'static', 'videos.json'), 'r') as f:
         data = json.loads(f.read())
     
     data["videos"].append({"title" : title, "url": input_url, "transcript": text, "segments": final_segments})
 
-    with open('videos.json', 'w') as f:
+    with open(os.path.join(SITE_ROOT, 'static', 'videos.json'), 'w') as f:
         f.write(json.dumps(data))
 
     os.remove(filename)
 
-def find_similar():
-    input_query = input("Enter query: ")
+    return jsonify({"status": "success"})
+
+@app.route('/find_similar', methods=['GET'])
+def find_similar_route():
+    args = request.args
+    input_query = args.get("query")
+
     model = SentenceTransformer('all-MiniLM-L6-v2')
 
-    with open('videos.json', 'r') as f:
+    with open(os.path.join(SITE_ROOT, 'static', 'videos.json'), 'r') as f:
         data = json.loads(f.read())
 
     database = []
@@ -90,7 +101,7 @@ def find_similar():
 
     for i, embedding in enumerate(embeddings):
         result = cos(input_query_embedding, torch.from_numpy(embedding))
-        if(result > 0.5):
+        if(result > 0.3):
             qa_input = {
                 'context': transcripts[i],
                 'question': input_query
@@ -118,20 +129,12 @@ def find_similar():
     best.reverse()
 
     if len(best) == 0:
-        print("No results!")
+        return jsonify({"status": "No results!"})
     else:
-        print("========================")
-        print("Search results: ")
+        results = []
         for i, e in enumerate(best):
-            print(f"Video: {e[1]} ({e[2]})\nAnswer: {e[3]}")
-            print("========================")
+            results.append({"video": e[1], "url": e[2], "answer": e[3]})
+        return jsonify(results)
 
-
-functions = {'add' : add_video,
-             'find' : find_similar}
-
-parser.add_argument('function', choices=functions.keys())
-args = parser.parse_args()
-
-func = functions[args.function]
-func()
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5001)
